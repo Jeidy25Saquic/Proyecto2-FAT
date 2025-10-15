@@ -1,1 +1,38 @@
-{}
+{
+  "DevOps": {
+    "name": "DevOps",
+    "data_start": "./fs\\blocks\\1d822c9e-d606-4a4f-bad6-609d10fc6fb6.json",
+    "in_trash": false,
+    "size_chars": 383,
+    "created_at": "2025-10-15T01:12:12.357150+00:00",
+    "modified_at": "2025-10-15T03:42:08.116483+00:00",
+    "deleted_at": null,
+    "owner": "admin",
+    "permissions": {
+      "admin": {
+        "read": true,
+        "write": true
+      },
+      "jennifer": {
+        "read": true,
+        "write": false
+      }
+    }
+  },
+  "Front End": {
+    "name": "Front End",
+    "data_start": "./fs\\blocks\\eb516be9-a44f-447b-b278-5c0c9070d13c.json",
+    "in_trash": false,
+    "size_chars": 160,
+    "created_at": "2025-10-15T03:35:15.736132+00:00",
+    "modified_at": "2025-10-15T03:44:13.376490+00:00",
+    "deleted_at": null,
+    "owner": "admin",
+    "permissions": {
+      "admin": {
+        "read": true,
+        "write": true
+      }
+    }
+  }
+}

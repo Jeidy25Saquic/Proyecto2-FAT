@@ -1,12 +1,11 @@
 
 import os
 import json
-import random
 import uuid
 from datetime import datetime, timezone
 from typing import Optional, List, Dict
 
-# configuracion incial
+
 block_size = 20
 fs_dir = "./fs"
 blocks_dir = os.path.join(fs_dir, "blocks")
@@ -15,8 +14,11 @@ users_file = os.path.join(fs_dir, "users.json")
 
 default_admin = {"username": "admin", "password": "1234"}
 
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
 
 def ensure_dirs():
     os.makedirs(blocks_dir, exist_ok=True)
@@ -26,23 +28,25 @@ def ensure_dirs():
     if not os.path.exists(users_file):
         with open(users_file, "w", encoding="utf-8") as f:
             # guarda solo usuarios y contraseñas (proyecto académico)
-            json.dump({default_admin["username"]: {"password": default_admin["password"]}}, f, indent=2, ensure_ascii=False)
+            json.dump({default_admin["username"]: {"password": default_admin["password"]}}, f, indent=2,
+                      ensure_ascii=False)
+
 
 def load_json(path: str) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
+
 def save_json(path: str, obj: dict):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(obj, f, indent=2, ensure_ascii=False)
 
-# Bloques
-def create_blocks(content: str) -> List[str]:
 
+#  Bloques fisicos
+def create_blocks_from_content(content: str) -> List[str]:
     blocks = []
     i = 0
     while i < len(content):
-        #id = random.randint(100, 10000)
         chunk = content[i:i + block_size]
         block_id = str(uuid.uuid4())
         filename = f"{block_id}.json"
@@ -67,6 +71,7 @@ def create_blocks(content: str) -> List[str]:
             bf.truncate()
     return blocks
 
+
 def read_blocks(start_path: Optional[str]) -> str:
     if not start_path:
         return ""
@@ -75,7 +80,7 @@ def read_blocks(start_path: Optional[str]) -> str:
     visited = set()
     while p:
         if p in visited:
-            # loop de seguridad no deberia pasar
+            # loop de seguridad (no debería pasar)
             break
         visited.add(p)
         if not os.path.exists(p):
@@ -85,6 +90,7 @@ def read_blocks(start_path: Optional[str]) -> str:
         parts.append(obj.get("datos", ""))
         p = obj.get("siguiente")
     return "".join(parts)
+
 
 def gather_block_chain(start_path: Optional[str]) -> List[str]:
     chain = []
@@ -102,6 +108,7 @@ def gather_block_chain(start_path: Optional[str]) -> List[str]:
         p = obj.get("siguiente")
     return chain
 
+
 def delete_block_files(paths: List[str]):
     for p in paths:
         try:
@@ -111,20 +118,21 @@ def delete_block_files(paths: List[str]):
             pass
 
 
+# ---------- SistemaFAT ----------
 class SistemaFAT:
     def __init__(self):
         ensure_dirs()
         self._fat = load_json(fat_file)
         self._users = load_json(users_file)
 
-    # persistencia
+
     def _save_fat(self):
         save_json(fat_file, self._fat)
 
     def _save_users(self):
         save_json(users_file, self._users)
 
-    #usuarios
+    # ---------- usuarios ----------
     def validar_credenciales(self, username: str, password: str) -> bool:
         u = self._users.get(username)
         return bool(u and u.get("password") == password)
@@ -136,11 +144,14 @@ class SistemaFAT:
         self._save_users()
         return {"username": username}
 
+    def es_administrador(self, username: str) -> bool:
+        return username == "admin"
+
     # ---------- operaciones de archivos ----------
     def crear_archivo(self, name: str, content: str, actor: str) -> dict:
         if name in self._fat:
             raise ValueError("Archivo ya existe")
-        blocks = create_blocks(content)
+        blocks = create_blocks_from_content(content)
         start = blocks[0] if blocks else None
         entry = {
             "name": name,
@@ -215,7 +226,7 @@ class SistemaFAT:
             raise PermissionError("No tienes permiso de escritura")
         # guardar cadena vieja y crear nuevos bloques
         old_chain = gather_block_chain(e.get("data_start"))
-        new_blocks = create_blocks(new_content)
+        new_blocks = create_blocks_from_content(new_content)
         new_start = new_blocks[0] if new_blocks else None
         # actualizar entrada
         e["data_start"] = new_start
@@ -245,6 +256,9 @@ class SistemaFAT:
             raise FileNotFoundError("Archivo no existe")
         if not e.get("in_trash", False):
             raise ValueError("Archivo no está en papelera")
+        # Solo el propietario puede recuperar (el admin también puede)
+        if actor != e.get("owner") and not self.es_administrador(actor):
+            raise PermissionError("Solo el propietario o administrador pueden recuperar el archivo")
         e["in_trash"] = False
         e["deleted_at"] = None
         e["modified_at"] = now_iso()
@@ -252,13 +266,15 @@ class SistemaFAT:
         self._save_fat()
         return e
 
-    def actualizar_permisos(self, name: str, owner_actor: str, target_user: str,
+    def actualizar_permisos(self, name: str, actor: str, target_user: str,
                             read: Optional[bool] = None, write: Optional[bool] = None) -> Dict:
         e = self._fat.get(name)
         if not e:
             raise FileNotFoundError("Archivo no existe")
-        if e.get("owner") != owner_actor:
-            raise PermissionError("Solo el owner puede cambiar permisos")
+
+        if not self.es_administrador(actor):
+            raise PermissionError("Solo el administrador puede cambiar permisos")
+
         perms = e.get("permissions", {})
         t = perms.get(target_user, {"read": False, "write": False})
         if read is not None:
@@ -268,7 +284,7 @@ class SistemaFAT:
         perms[target_user] = t
         e["permissions"] = perms
         self._fat[name] = e
-        # si usuario objetivo no existe en users, lo agrega
+        # si usuario objetivo no existe en users, lo agrega (contraseña por defecto)
         if target_user not in self._users:
             self._users[target_user] = {"password": "1234"}
             self._save_users()
@@ -279,8 +295,11 @@ class SistemaFAT:
         e = self._fat.get(name)
         if not e:
             raise FileNotFoundError("Archivo no existe")
-        if e.get("owner") != actor:
-            raise PermissionError("Solo el owner puede eliminar permanentemente")
+
+
+        if not (self.es_administrador(actor) or e.get("owner") == actor):
+            raise PermissionError("No puedes eliminar permanentemente")
+
         chain = gather_block_chain(e.get("data_start"))
         delete_block_files(chain)
         del self._fat[name]
@@ -288,8 +307,13 @@ class SistemaFAT:
 
 
     def ver_fat_completa(self, actor: str) -> Dict:
+        # Solo admin puede ver la FAT completa
+        if not self.es_administrador(actor):
+            raise PermissionError("Solo el administrador puede ver la FAT completa")
         return self._fat.copy()
 
+
+# ---------- uso de ejemplo con menú en consola (opcional) ----------
 def menu_interactivo():
     s = SistemaFAT()
     print("=== Simulador FAT (modo consola) ===")
@@ -308,9 +332,14 @@ def menu_interactivo():
         print("5) Modificar archivo")
         print("6) Eliminar (mover a papelera)")
         print("7) Recuperar archivo")
-        print("8) Actualizar permisos (solo owner)")
-        print("9) Eliminar permanentemente (solo owner)")
-        print("10) Ver FAT completa (para evidencias)")
+        if s.es_administrador(username):
+            print("8) Actualizar permisos (SOLO ADMIN)")
+            print("9) Eliminar permanentemente (SOLO ADMIN)")
+            print("10) Ver FAT completa (SOLO ADMIN)")
+        else:
+            print("8) Actualizar permisos - SOLO ADMIN")
+            print("9) Eliminar permanentemente - SOLO ADMIN")
+            print("10) Ver FAT completa - SOLO ADMIN")
         print("0) Salir")
         opt = input(">> ").strip()
         try:
@@ -344,6 +373,9 @@ def menu_interactivo():
                 res = s.recuperar_archivo(name, username)
                 print("Recuperado:", res)
             elif opt == "8":
+                if not s.es_administrador(username):
+                    print("ERROR: Solo el administrador puede cambiar permisos")
+                    continue
                 name = input("Archivo: ").strip()
                 target = input("Usuario objetivo: ").strip()
                 r = input("Permiso lectura (y/n/skip): ").strip().lower()
@@ -353,10 +385,16 @@ def menu_interactivo():
                 perms = s.actualizar_permisos(name, username, target, read=r_val, write=w_val)
                 print("Permisos actualizados:", perms)
             elif opt == "9":
+                if not s.es_administrador(username):
+                    print("ERROR: Solo el administrador puede eliminar permanentemente")
+                    continue
                 name = input("Archivo a eliminar permanentemente: ").strip()
                 s.eliminar_permanente(name, username)
                 print("Eliminado permanentemente.")
             elif opt == "10":
+                if not s.es_administrador(username):
+                    print("ERROR: Solo el administrador puede ver la FAT completa")
+                    continue
                 fat = s.ver_fat_completa(username)
                 print(json.dumps(fat, indent=2, ensure_ascii=False))
             elif opt == "0":
@@ -365,6 +403,7 @@ def menu_interactivo():
                 print("Opción inválida.")
         except Exception as ex:
             print("ERROR:", type(ex).__name__, str(ex))
+
 
 if __name__ == "__main__":
     menu_interactivo()
